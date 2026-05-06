@@ -1,0 +1,24 @@
+auth:
+  service_account_key_path: ./sa-key.json
+  token_endpoint: https://service-account.api.stackit.cloud/token
+
+scope:
+  organization_ids: []
+  project_ids:
+    - proj-eu01-abc
+  region: eu01
+
+checks:
+  exclude: []
+  include_only: []
+  custom_dirs: []
+
+reporting:
+  formats: [json, md, pdf]
+  output_dir: ./out
+  pdf_title: "STACKIT Cloud Audit"
+
+runtime:
+  parallelism: 8
+  request_timeout_s: 30
+  api_retry_attempts: 3

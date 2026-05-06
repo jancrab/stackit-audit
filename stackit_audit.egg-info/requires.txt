@@ -1,0 +1,10 @@
+pydantic>=2.5
+httpx>=0.25
+PyJWT[crypto]>=2.8
+cryptography>=41
+PyYAML>=6.0
+reportlab>=4.0
+
+[dev]
+pytest>=7
+pytest-cov>=4

@@ -1,0 +1,10 @@
+# Minimum supported versions for STACKIT-managed engines.
+# Used by DB-003 and K8S-002. Update when STACKIT changes its supported matrix.
+# Values are illustrative defaults; verify against current STACKIT docs.
+postgres: "13"
+mariadb: "10.6"
+mongodb: "5.0"
+redis: "6.2"
+opensearch: "2.0"
+rabbitmq: "3.10"
+kubernetes: "1.28"

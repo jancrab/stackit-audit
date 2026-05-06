@@ -1,0 +1,34 @@
+# CCM/C5 areas that the tool deliberately does NOT verify automatically.
+# Each entry produces a synthetic MANUAL finding so the report stays
+# honest about what was and was not checked.
+- area: "Personnel security & training"
+  framework_refs: ["CCM:HRS-01", "CCM:HRS-04", "C5:HR-01", "C5:HR-03"]
+  rationale: "HR processes, screening, training records — outside any cloud API."
+
+- area: "Information security policy / governance"
+  framework_refs: ["CCM:GRC-01", "CCM:GRC-04", "C5:OIS-01", "C5:OIS-02"]
+  rationale: "Documented policies and governance bodies are organizational artifacts."
+
+- area: "Supplier / sub-processor management"
+  framework_refs: ["CCM:STA-01", "CCM:STA-09", "C5:DLL-01", "C5:DLL-02"]
+  rationale: "Contracts and supplier reviews are not API-introspectable."
+
+- area: "Incident response process"
+  framework_refs: ["CCM:SEF-04", "CCM:SEF-05", "C5:SIM-01", "C5:SIM-04"]
+  rationale: "Process documentation and drills cannot be verified via STACKIT APIs."
+
+- area: "Penetration testing & vulnerability management process"
+  framework_refs: ["CCM:TVM-08", "C5:OPS-17"]
+  rationale: "Test plans and reports are external artifacts."
+
+- area: "Physical security of data centers"
+  framework_refs: ["CCM:DCS-01", "CCM:DCS-04", "C5:PS-01"]
+  rationale: "Provider-side physical controls, evidenced by STACKIT certifications."
+
+- area: "Multi-factor authentication on user accounts"
+  framework_refs: ["CCM:IAM-13", "C5:IDM-08"]
+  rationale: "STACKIT Authorization API does not expose MFA status; verify via the IdP/SSO configuration."
+
+- area: "Cryptographic key management policy"
+  framework_refs: ["CCM:CEK-02", "CCM:CEK-09", "C5:KRY-02"]
+  rationale: "KMS API is beta; per-resource key bindings often not queryable."
