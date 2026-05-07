@@ -1,0 +1,20 @@
+name: Vibers Code Review
+on:
+  push:
+    branches: [master]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: marsiandeployer/vibers-action@v1
+        with:
+          # TODO: replace with a publicly-accessible link to your spec
+          # (Google Doc / Notion page with "anyone with link can view")
+          spec_url: 'YOUR_SPEC_URL_HERE'
+          review_scope: 'spec-compliance'
+          # TODO: replace with your Telegram handle (e.g. '@jansmith')
+          telegram_contact: 'YOUR_TELEGRAM_HANDLE'
