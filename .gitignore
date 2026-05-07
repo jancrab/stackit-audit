@@ -25,6 +25,7 @@ htmlcov/
 # Output artefacts (never commit real audit results)
 out/
 *.json
+!sample/*.json
 !audit-config.example.yaml
 inventory.json
 findings.json
