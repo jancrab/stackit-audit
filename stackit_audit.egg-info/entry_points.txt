@@ -1,2 +1,0 @@
-[console_scripts]
-stackit-audit = stackit_audit.cli.main:main
