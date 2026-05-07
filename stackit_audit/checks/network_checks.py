@@ -265,7 +265,7 @@ class NET006LoadBalancerHttpListener(CheckBase):
         description="HTTP listeners terminate plaintext traffic; should redirect or be removed.",
         framework_refs=["CCM:CEK-19", "C5:KRY-04"],
         framework_names=["CCM v4", "BSI C5:2020"],
-        domain="Crypto",
+        domain="Network",  # ARCH-010: was incorrectly "Crypto"
         severity="high",
         rationale="Plaintext credentials and session tokens may transit the listener.",
         resource_types=["load_balancer.lb"],

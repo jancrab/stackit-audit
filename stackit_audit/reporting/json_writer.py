@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from stackit_audit import __version__
 from stackit_audit.models import Finding
 from stackit_audit.scoring import aggregate
 from stackit_audit.utils.redact import redact
+
+if TYPE_CHECKING:
+    from stackit_audit.checks.base import CheckBase
 
 
 def build_findings_document(
@@ -18,8 +21,10 @@ def build_findings_document(
     finished_at: datetime | None = None,
     auth_method: str = "key_flow",
     sa_email: str = "",
+    active_checks: list[type["CheckBase"]] | None = None,  # ARCH-004
 ) -> dict[str, Any]:
-    summary = aggregate(findings)
+    # ARCH-004: pass active checks so coverage stats reflect include/exclude filtering
+    summary = aggregate(findings, active_checks=active_checks)
     return {
         "schema_version": "1.0",
         "tool_version": __version__,

@@ -12,6 +12,12 @@ def _now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 
+def _tool_version() -> str:
+    # ARCH-009: derive from package __version__ so it stays in sync with releases
+    from stackit_audit import __version__
+    return __version__
+
+
 class Finding(BaseModel):
     finding_id: str = Field(default_factory=lambda: str(uuid4()))
     check_id: str
@@ -33,4 +39,4 @@ class Finding(BaseModel):
     assurance_level: AssuranceLevel
     manual_review_required: bool = False
     timestamp: datetime = Field(default_factory=_now)
-    tool_version: str = "0.1.0"
+    tool_version: str = Field(default_factory=_tool_version)

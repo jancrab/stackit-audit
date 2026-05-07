@@ -2,11 +2,16 @@
 
 API errors are caught and recorded in `inventory.errors`; checks treat
 missing resource categories as `UNKNOWN` rather than `PASS`.
+
+ARCH-005: per-project discovery is parallelised with ThreadPoolExecutor so
+that multi-project audits don't serialise 12+ API services × N projects.
+The default worker count matches RuntimeConfig.parallelism (8).
 """
 
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any
 
@@ -48,9 +53,10 @@ class Inventory(BaseModel):
 
 
 class DiscoveryOrchestrator:
-    def __init__(self, auth: KeyFlowAuth, region: str = "eu01") -> None:
+    def __init__(self, auth: KeyFlowAuth, region: str = "eu01", workers: int = 8) -> None:
         self.auth = auth
         self.region = region
+        self.workers = max(1, workers)  # ARCH-005: parallelism per RuntimeConfig
         self.rm = ResourceManagerClient(auth)
         self.authz = AuthorizationClient(auth)
         self.sa = ServiceAccountClient(auth)
@@ -65,10 +71,50 @@ class DiscoveryOrchestrator:
         self.audit = AuditLogClient(auth, region)
 
     def discover(self, project_ids: list[str]) -> Inventory:
+        """Discover all projects, parallelised across projects (ARCH-005).
+
+        Each project gets its own per-project Inventory that is merged into
+        the final result after all futures complete.  Resources from different
+        projects are collected in separate lists to avoid lock contention.
+        """
         inv = Inventory(scope={"project_ids": project_ids, "region": self.region})
+        if len(project_ids) == 1:
+            # Fast path: no thread overhead for single-project runs
+            self._discover_project(project_ids[0], inv)
+            return inv
+
+        # ARCH-005: parallelise across projects
+        sub_inventories: dict[str, Inventory] = {}
+        with ThreadPoolExecutor(max_workers=min(self.workers, len(project_ids))) as pool:
+            futures = {
+                pool.submit(self._discover_project_isolated, pid): pid
+                for pid in project_ids
+            }
+            for future in as_completed(futures):
+                pid = futures[future]
+                try:
+                    sub_inv = future.result()
+                    sub_inventories[pid] = sub_inv
+                except Exception as exc:
+                    log.exception("Unexpected error during discovery of project %s: %s", pid, exc)
+                    inv.errors.append(
+                        DiscoveryError(project_id=pid, api="orchestrator", message=str(exc))
+                    )
+
+        # Merge sub-inventories in deterministic project_id order
         for pid in project_ids:
-            self._discover_project(pid, inv)
+            if pid in sub_inventories:
+                sub = sub_inventories[pid]
+                inv.resources.extend(sub.resources)
+                inv.errors.extend(sub.errors)
+
         return inv
+
+    def _discover_project_isolated(self, project_id: str) -> Inventory:
+        """Run discovery for a single project in an isolated Inventory (thread-safe)."""
+        sub = Inventory(scope={"project_ids": [project_id], "region": self.region})
+        self._discover_project(project_id, sub)
+        return sub
 
     # DEPRECATED: replaced by per-project closure inside _discover_project
     # def _safe(self, project_id, api_name, fn, *args, **kwargs):

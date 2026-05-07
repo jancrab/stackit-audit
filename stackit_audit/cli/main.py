@@ -18,6 +18,14 @@ from stackit_audit.utils.exit_codes import (
 )
 from stackit_audit.utils.logging import setup_logging
 
+# ARCH-003: severity ordering for --fail-on threshold (>= not ==)
+_SEV_RANK: dict[str, int] = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+
+def _at_or_above(finding_sev: str, threshold: str) -> bool:
+    """Return True when finding_sev is at or above the threshold severity."""
+    return _SEV_RANK.get(finding_sev, 9) <= _SEV_RANK.get(threshold, 9)
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -40,12 +48,15 @@ def _parse_formats(raw: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def cmd_discover(args: argparse.Namespace) -> int:
-    from stackit_audit.auth.key_flow import KeyFlowAuth
+    # ARCH-001: was orchestrator.run() — method is .discover()
+    # ARCH-002: was KeyFlowAuth.from_key_file() — construct via ServiceAccountKey.from_file()
+    from stackit_audit.auth.key_flow import KeyFlowAuth, ServiceAccountKey
     from stackit_audit.discovery.orchestrator import DiscoveryOrchestrator
 
     log = logging.getLogger(__name__)
     try:
-        auth = KeyFlowAuth.from_key_file(args.service_account_key)
+        sa_key = ServiceAccountKey.from_file(args.service_account_key)
+        auth = KeyFlowAuth(sa_key)
     except Exception as exc:
         print(f"[error] Auth setup failed: {exc}", file=sys.stderr)
         return EXIT_CONFIG_ERROR
@@ -56,11 +67,12 @@ def cmd_discover(args: argparse.Namespace) -> int:
         return EXIT_CONFIG_ERROR
 
     region = args.region or "eu01"
-    scope = {"project_ids": project_ids, "region": region}
+
+    workers = getattr(args, "workers", 8)
 
     try:
-        orchestrator = DiscoveryOrchestrator(auth, region=region)
-        inventory = orchestrator.run(project_ids=project_ids, scope=scope)
+        orchestrator = DiscoveryOrchestrator(auth, region=region, workers=workers)
+        inventory = orchestrator.discover(project_ids=project_ids)
     except Exception as exc:
         log.exception("Discovery failed: %s", exc)
         return EXIT_API_ERROR
@@ -109,10 +121,12 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     scope = raw.get("scope", {})
     started = datetime.fromisoformat(raw.get("generated_at", datetime.now(tz=timezone.utc).isoformat()))
+    # ARCH-004: pass the actual active check list so coverage stats are accurate
     doc = build_findings_document(
         findings=findings,
         scope=scope,
         started_at=started,
+        active_checks=[type(c) for c in engine.checks],
     )
 
     out_path = Path(args.output)
@@ -120,8 +134,12 @@ def cmd_audit(args: argparse.Namespace) -> int:
     fail_count = sum(1 for f in findings if f.status in ("FAIL", "PARTIAL"))
     print(f"[ok] findings.json written to {out_path} ({len(findings)} findings, {fail_count} actionable)")
 
+    # ARCH-003: use >= severity threshold, not exact == match
     fail_on = (args.fail_on or "").lower()
-    if fail_on and any(True for f in findings if f.status in ("FAIL","PARTIAL") and f.severity == fail_on):
+    if fail_on and any(
+        f for f in findings
+        if f.status in ("FAIL", "PARTIAL") and _at_or_above(f.severity, fail_on)
+    ):
         return EXIT_FINDINGS
     return EXIT_OK
 
@@ -211,6 +229,18 @@ def cmd_run(args: argparse.Namespace) -> int:
 # parser
 # ---------------------------------------------------------------------------
 
+def _load_config(path: str | None):
+    """ARCH-008: load audit-config.yaml if --config was supplied."""
+    if not path:
+        return None
+    from stackit_audit.config.loader import load_config
+    try:
+        return load_config(path)
+    except Exception as exc:
+        print(f"[error] Cannot load config file '{path}': {exc}", file=sys.stderr)
+        sys.exit(EXIT_CONFIG_ERROR)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stackit-audit",
@@ -218,6 +248,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--log-level", default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument(  # ARCH-008
+        "--config", default=None, metavar="PATH",
+        help="Path to audit-config.yaml (overrides per-subcommand defaults)",
+    )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -262,6 +296,28 @@ def main() -> int:
     parser = _build_parser()
     args = parser.parse_args()
     setup_logging(args.log_level)
+
+    # ARCH-008: apply config file as defaults before dispatching
+    cfg = _load_config(getattr(args, "config", None))
+    if cfg is not None:
+        # Fill in CLI arg gaps from config (CLI flags always win when explicitly set)
+        if not getattr(args, "service_account_key", None) and cfg.auth.service_account_key_path:
+            args.service_account_key = str(cfg.auth.service_account_key_path)
+        if not getattr(args, "project_id", None) and cfg.scope.project_ids:
+            args.project_id = list(cfg.scope.project_ids)
+        if getattr(args, "region", None) in (None, "eu01") and cfg.scope.region != "eu01":
+            args.region = cfg.scope.region
+        if not getattr(args, "output_dir", None) and cfg.reporting.output_dir:
+            args.output_dir = str(cfg.reporting.output_dir)
+        if not getattr(args, "formats", None) and cfg.reporting.formats:
+            args.formats = ",".join(cfg.reporting.formats)
+        if not getattr(args, "exclude", None) and cfg.checks.exclude:
+            args.exclude = ",".join(cfg.checks.exclude)
+        if not getattr(args, "include_only", None) and cfg.checks.include_only:
+            args.include_only = ",".join(cfg.checks.include_only)
+        # ARCH-005: parallelism from RuntimeConfig
+        if not getattr(args, "workers", None):
+            args.workers = cfg.runtime.parallelism
 
     dispatch = {
         "discover": cmd_discover,
